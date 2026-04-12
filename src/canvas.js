@@ -247,37 +247,65 @@ export class InfiniteCanvas {
             return;
         }
 
-        // Draw each segment with variable width
-        for (let i = 0; i < pts.length - 1; i++) {
-            const p0 = pts[i];
-            const p1 = pts[i + 1];
+        // Interpolate points where distance is too large (prevents gaps on fast strokes)
+        const interpolated = this._interpolatePoints(pts);
+
+        // Draw as connected segments with variable width.
+        // Each segment shares endpoints with neighbors — round lineCap fills the join.
+        ctx.strokeStyle = stroke.color;
+
+        for (let i = 0; i < interpolated.length - 1; i++) {
+            const p0 = interpolated[i];
+            const p1 = interpolated[i + 1];
             const size0 = this.getStrokeSize(stroke, p0.pressure);
             const size1 = this.getStrokeSize(stroke, p1.pressure);
             const opacity0 = this.getStrokeOpacity(stroke, p0.pressure);
             const opacity1 = this.getStrokeOpacity(stroke, p1.pressure);
-            const avgSize = (size0 + size1) / 2;
-            const avgOpacity = (opacity0 + opacity1) / 2;
 
-            ctx.globalAlpha = avgOpacity;
-            ctx.strokeStyle = stroke.color;
-            ctx.lineWidth = avgSize;
+            ctx.globalAlpha = (opacity0 + opacity1) / 2;
+            ctx.lineWidth = (size0 + size1) / 2;
 
             ctx.beginPath();
             ctx.moveTo(p0.x, p0.y);
-
-            // Use midpoints for smooth curves
-            if (i < pts.length - 2) {
-                const p2 = pts[i + 1];
-                const mx = (p0.x + p2.x) / 2;
-                const my = (p0.y + p2.y) / 2;
-                ctx.quadraticCurveTo(p0.x, p0.y, mx, my);
-            } else {
-                ctx.lineTo(p1.x, p1.y);
-            }
+            ctx.lineTo(p1.x, p1.y);
             ctx.stroke();
         }
 
         ctx.restore();
+    }
+
+    /**
+     * Interpolate additional points when consecutive samples are too far apart.
+     * This prevents the dashed/dotted effect when drawing fast.
+     */
+    _interpolatePoints(pts) {
+        const maxDist = 4; // Maximum distance between points in world coords
+        const result = [pts[0]];
+
+        for (let i = 1; i < pts.length; i++) {
+            const prev = pts[i - 1];
+            const curr = pts[i];
+            const dx = curr.x - prev.x;
+            const dy = curr.y - prev.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > maxDist) {
+                // Insert intermediate points
+                const steps = Math.ceil(dist / maxDist);
+                for (let s = 1; s < steps; s++) {
+                    const t = s / steps;
+                    result.push({
+                        x: prev.x + dx * t,
+                        y: prev.y + dy * t,
+                        pressure: prev.pressure + (curr.pressure - prev.pressure) * t,
+                    });
+                }
+            }
+
+            result.push(curr);
+        }
+
+        return result;
     }
 
     /** Get effective stroke size based on pressure and tool config. */
