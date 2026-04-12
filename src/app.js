@@ -174,8 +174,8 @@ canvasEl.addEventListener('pointerdown', (e) => {
         return;
     }
 
-    // Space held → pan
-    if (state.spaceHeld) {
+    // Space held or Hand tool → pan
+    if (state.spaceHeld || state.currentTool === 'hand') {
         state.isPanning = true;
         state.lastPanPos = { x: e.clientX, y: e.clientY };
         canvasEl.setPointerCapture(e.pointerId);
@@ -491,7 +491,8 @@ function selectTool(toolKey) {
 }
 
 function getCursor() {
-    if (state.spaceHeld) return 'grab';
+    if (state.spaceHeld || state.currentTool === 'hand') return 'grab';
+    if (state.currentTool === 'fill') return 'crosshair'; // Better cursor for fill
     const tool = getTool(state.currentTool);
     if (tool.isSpecial) return 'crosshair';
     return 'none'; // We show cursor preview instead
