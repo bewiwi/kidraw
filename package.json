@@ -1,0 +1,9 @@
+{
+  "name": "kidraw",
+  "version": "1.0.0",
+  "description": "A fun, pressure-sensitive drawing app for kids with infinite canvas",
+  "private": true,
+  "scripts": {
+    "start": "npx serve ."
+  }
+}

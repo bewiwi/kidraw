@@ -1,0 +1,6 @@
+.git
+.github
+docs
+Dockerfile
+.dockerignore
+package.json
