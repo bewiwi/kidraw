@@ -46,7 +46,7 @@ export const TOOLS = {
         maxSize: 100,
         defaultSize: 20,
         lineCap: 'round',
-        compositeOp: 'destination-out',
+        compositeOp: 'source-over',
         opacityRange: [1.0, 1.0],
         sizeRange: [0.5, 1.0],
     },

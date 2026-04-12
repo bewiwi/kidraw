@@ -35,13 +35,17 @@ const storage = new DrawingStorage();
 const colorPicker = new ColorPickerManager();
 
 // ===== Drawing input =====
+function getBackgroundColor() {
+    return infiniteCanvas.background === 'light-gray' ? '#f0f0f0' : '#ffffff';
+}
+
 function createStrokeData(x, y, pressure) {
     const tool = getTool(state.currentTool);
     return {
         id: 'stroke_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         tool: state.currentTool,
         toolDef: tool,
-        color: state.currentTool === 'eraser' ? '#ffffff' : state.currentColor,
+        color: state.currentTool === 'eraser' ? getBackgroundColor() : state.currentColor,
         size: state.currentSize,
         opacity: state.currentOpacity,
         points: [{ x, y, pressure }],
