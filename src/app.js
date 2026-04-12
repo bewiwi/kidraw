@@ -12,7 +12,7 @@ import { ColorPickerManager, PALETTE } from './colorpicker.js';
 // ===== State =====
 const state = {
     currentTool: 'brush',
-    currentColor: '#2d3436',
+    currentColor: '#e94560',
     currentSize: 12,
     currentOpacity: 1,
     drawingId: null,

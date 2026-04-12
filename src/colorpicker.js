@@ -4,12 +4,12 @@
 
 /** Curated palette of 24 vibrant colors. */
 export const PALETTE = [
-    '#1a1a2e', '#e94560', '#f25c54', '#f4845f',
-    '#f7b267', '#f7d76e', '#a8d8b9', '#6dc9a0',
-    '#2ecc71', '#1abc9c', '#3498db', '#2980b9',
-    '#6c5ce7', '#a29bfe', '#fd79a8', '#e84393',
-    '#dfe6e9', '#b2bec3', '#636e72', '#2d3436',
-    '#ffeaa7', '#fab1a0', '#55efc4', '#74b9ff',
+    '#e94560', '#f25c54', '#f4845f', '#f7b267',
+    '#f7d76e', '#ffeaa7', '#55efc4', '#2ecc71',
+    '#1abc9c', '#6dc9a0', '#74b9ff', '#3498db',
+    '#2980b9', '#a29bfe', '#6c5ce7', '#e84393',
+    '#fd79a8', '#fab1a0', '#ffffff', '#dfe6e9',
+    '#b2bec3', '#636e72', '#2d3436', '#1a1a2e',
 ];
 
 /**
