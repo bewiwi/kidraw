@@ -747,7 +747,11 @@ async function saveDrawing() {
 
     await storage.saveDrawing(drawing);
     state.isDirtyForSave = false;
-    showToast('Saved!');
+    
+    // Actually download the image to the computer too! (MS Paint style)
+    exportPNG(true);
+    
+    showToast('Saved to Computer & Gallery!');
 }
 
 async function loadDrawing(id) {
@@ -806,10 +810,10 @@ window.addEventListener('beforeunload', () => {
 });
 
 // ===== Export PNG =====
-async function exportPNG() {
+async function exportPNG(silent = false) {
     const blob = await infiniteCanvas.exportPNG();
     if (!blob) {
-        showToast('Nothing to export!');
+        if (!silent) showToast('Nothing to export!');
         return;
     }
     const url = URL.createObjectURL(blob);
@@ -820,7 +824,7 @@ async function exportPNG() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast('Exported!');
+    if (!silent) showToast('Exported!');
 }
 
 // ===== Gallery =====
@@ -1027,7 +1031,6 @@ function wireTopBar() {
     document.getElementById('btn-undo').addEventListener('click', doUndo);
     document.getElementById('btn-redo').addEventListener('click', doRedo);
     document.getElementById('btn-save').addEventListener('click', saveDrawing);
-    document.getElementById('btn-export').addEventListener('click', exportPNG);
     document.getElementById('btn-clear').addEventListener('click', clearCanvas);
     document.getElementById('btn-gallery').addEventListener('click', openGallery);
 
