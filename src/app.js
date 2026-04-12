@@ -748,10 +748,19 @@ async function saveDrawing() {
     await storage.saveDrawing(drawing);
     state.isDirtyForSave = false;
     
-    // Actually download the image to the computer too! (MS Paint style)
-    exportPNG(true);
+    // Download the raw JSON file (.kidraw)
+    const jsonStr = JSON.stringify(drawing);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (state.drawingName || 'drawing') + '.kidraw';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     
-    showToast('Saved to Computer & Gallery!');
+    showToast('Project Saved (.kidraw)!');
 }
 
 async function loadDrawing(id) {
@@ -1031,8 +1040,54 @@ function wireTopBar() {
     document.getElementById('btn-undo').addEventListener('click', doUndo);
     document.getElementById('btn-redo').addEventListener('click', doRedo);
     document.getElementById('btn-save').addEventListener('click', saveDrawing);
+    document.getElementById('btn-export').addEventListener('click', () => exportPNG(false));
     document.getElementById('btn-clear').addEventListener('click', clearCanvas);
     document.getElementById('btn-gallery').addEventListener('click', openGallery);
+
+    // Open .kidraw file
+    document.getElementById('btn-open').addEventListener('click', () => {
+        document.getElementById('file-import').click();
+    });
+    
+    document.getElementById('file-import').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            const text = await file.text();
+            const drawing = JSON.parse(text);
+            
+            // Generate a fresh ID so it's treated as a new local copy
+            drawing.id = 'drawing_' + Date.now();
+            
+            state.drawingId = drawing.id;
+            state.drawingName = drawing.name || file.name.replace('.kidraw', '');
+            document.getElementById('drawing-title').value = state.drawingName;
+
+            infiniteCanvas.background = drawing.background || 'white';
+            infiniteCanvas.camera = drawing.camera || { x: 0, y: 0, zoom: 1 };
+
+            infiniteCanvas.strokes = (drawing.strokes || []).map(s => ({
+                ...s,
+                toolDef: getTool(s.tool),
+            }));
+
+            history.clear();
+            infiniteCanvas.markDirty();
+            updateZoomDisplay();
+            updateBackgroundUI();
+            state.isDirtyForSave = true;
+            
+            await storage.saveDrawing(drawing);
+            showToast('Project loaded from file!');
+        } catch (err) {
+            console.error('Failed to parse .kidraw file', err);
+            showToast('Error: Failed to read project file.');
+        }
+        
+        // Reset file input
+        e.target.value = '';
+    });
 
     document.getElementById('drawing-title').addEventListener('change', (e) => {
         state.drawingName = e.target.value || 'Untitled Drawing';
