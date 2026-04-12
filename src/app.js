@@ -8,6 +8,7 @@ import { StrokeStabilizer } from './smoothing.js';
 import { HistoryManager } from './history.js';
 import { DrawingStorage } from './storage.js';
 import { ColorPickerManager, PALETTE } from './colorpicker.js';
+import { executeFloodFill } from './floodfill.js';
 
 // ===== State =====
 const state = {
@@ -191,6 +192,50 @@ canvasEl.addEventListener('pointerdown', (e) => {
         // Switch back to previous tool
         if (state.previousTool) {
             selectTool(state.previousTool);
+        }
+        return;
+    }
+
+    // Fill tool
+    if (state.currentTool === 'fill') {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvasEl.getBoundingClientRect();
+        const screenX = Math.round((e.clientX - rect.left) * dpr);
+        const screenY = Math.round((e.clientY - rect.top) * dpr);
+        
+        // Temporarily hide cursor preview so it doesn't get captured in flood fill
+        cursorPreview.style.display = 'none';
+
+        const fillResult = executeFloodFill(
+            infiniteCanvas.ctx, 
+            screenX, screenY, 
+            infiniteCanvas.canvas.width, infiniteCanvas.canvas.height, 
+            state.currentColor, state.currentOpacity
+        );
+
+        if (fillResult) {
+            // Convert screen bounding box to world coordinates
+            const tl = infiniteCanvas.screenToWorld(fillResult.screenBox.x / dpr, fillResult.screenBox.y / dpr);
+            const br = infiniteCanvas.screenToWorld((fillResult.screenBox.x + fillResult.screenBox.width) / dpr, (fillResult.screenBox.y + fillResult.screenBox.height) / dpr);
+            
+            const fillStroke = {
+                id: 'fill_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                tool: 'fill',
+                type: 'image-fill',
+                patchData: fillResult.dataURL,
+                worldX: tl.x,
+                worldY: tl.y,
+                worldW: br.x - tl.x,
+                worldH: br.y - tl.y
+            };
+            
+            infiniteCanvas.strokes.push(fillStroke);
+            history.push({ type: 'strokes', data: [fillStroke] });
+            infiniteCanvas.markDirty();
+            state.isDirtyForSave = true;
+            
+            colorPicker.addToRecent();
+            renderRecentColors();
         }
         return;
     }

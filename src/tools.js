@@ -7,24 +7,25 @@ export const TOOLS = {
         icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="10" x2="3" y2="24"/><path d="M20 7l-3-3L5 16l-2 6 6-2L21 8z"/></svg>`,
         shortcut: 'P',
         minSize: 1,
-        maxSize: 20,
+        maxSize: 10,
         defaultSize: 3,
         lineCap: 'round',
         compositeOp: 'source-over',
-        opacityRange: [0.4, 1.0],
-        sizeRange: [0.8, 1.0],
+        opacityRange: [0.2, 1.0], // Changes heavily based on pressure (shading)
+        sizeRange: [0.9, 1.0], // Minimal size change
     },
     brush: {
         name: 'Brush',
         icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3a3 3 0 0 0-3 3c0 2-3 5-7 7-1 .5-2 1.5-2 3 0 2.5 2 4 4 4 1.5 0 3-1 4-2 3-3 6-8 7-10a3 3 0 0 0-3-5z"/></svg>`,
         shortcut: 'B',
-        minSize: 2,
+        minSize: 5,
         maxSize: 100,
-        defaultSize: 12,
+        defaultSize: 15,
         lineCap: 'round',
         compositeOp: 'source-over',
-        opacityRange: [0.5, 1.0],
-        sizeRange: [0.3, 1.0],
+        opacityRange: [0.8, 1.0], // Stays mostly opaque
+        sizeRange: [0.2, 1.0], // Huge variation in size based on pressure
+        useShadow: true, // Use soft shadow blur effect
     },
     marker: {
         name: 'Marker',
@@ -34,9 +35,9 @@ export const TOOLS = {
         maxSize: 60,
         defaultSize: 20,
         lineCap: 'square',
-        compositeOp: 'source-over',
-        opacityRange: [0.55, 0.55],
-        sizeRange: [0.5, 1.0],
+        compositeOp: 'multiply',
+        opacityRange: [0.75, 0.75], // Fixed opacity
+        sizeRange: [1.0, 1.0], // Fixed size
     },
     eraser: {
         name: 'Eraser',
@@ -58,6 +59,15 @@ export const TOOLS = {
         maxSize: 1,
         defaultSize: 1,
         isSpecial: true,
+    },
+    fill: {
+        name: 'Fill',
+        icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11h-14a2 2 0 0 0 -2 2v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2 -2v-2a2 2 0 0 0 -2 -2z" /><path d="M12 11v-4a2 2 0 0 1 2 -2h2" /><path d="M13 15v4" /></svg>`,
+        shortcut: 'F',
+        minSize: 1,
+        maxSize: 1,
+        defaultSize: 1,
+        isAction: true,
     },
 };
 

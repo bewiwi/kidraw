@@ -221,10 +221,28 @@ export class InfiniteCanvas {
 
     /** Render a single stroke with pressure-variable width/opacity. */
     renderStroke(stroke) {
+        const ctx = this.ctx;
+
+        if (stroke.type === 'image-fill') {
+            if (!stroke._img) {
+                stroke._img = new Image();
+                stroke._img.src = stroke.patchData;
+                stroke._img.onload = () => this.markDirty();
+                return;
+            }
+            if (stroke._img.complete) {
+                ctx.save();
+                ctx.globalAlpha = 1.0;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(stroke._img, stroke.worldX, stroke.worldY, stroke.worldW, stroke.worldH);
+                ctx.restore();
+            }
+            return;
+        }
+
         const pts = stroke.points;
         if (!pts || pts.length === 0) return;
 
-        const ctx = this.ctx;
         const tool = stroke.toolDef;
         if (!tool) return;
 
@@ -232,6 +250,11 @@ export class InfiniteCanvas {
         ctx.lineCap = tool.lineCap || 'round';
         ctx.lineJoin = 'round';
         ctx.globalCompositeOperation = tool.compositeOp || 'source-over';
+
+        if (tool.useShadow) {
+            ctx.shadowBlur = stroke.size * 0.4;
+            ctx.shadowColor = stroke.color;
+        }
 
         if (pts.length === 1) {
             // Single dot
