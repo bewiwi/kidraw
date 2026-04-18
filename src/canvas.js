@@ -6,6 +6,12 @@ export class InfiniteCanvas {
     constructor(canvasElement) {
         this.canvas = canvasElement;
         this.ctx = canvasElement.getContext('2d', { willReadFrequently: true });
+        
+        // Caching system for completed strokes
+        this.cacheCanvas = document.createElement('canvas');
+        this.cacheCtx = this.cacheCanvas.getContext('2d');
+        this.needsCacheRedraw = true;
+
         this.camera = { x: 0, y: 0, zoom: 1 };
         this.isDirty = true;
         this.strokes = [];
@@ -20,11 +26,20 @@ export class InfiniteCanvas {
 
     resize() {
         const container = this.canvas.parentElement;
-        const dpr = window.devicePixelRatio || 1;
+        // Cap DPR at 2 to avoid huge canvas memory/compositing costs.
+        // DPR 3 on 1920×1080 → 5760×3240 = 18.7MP → GPU can't composite in time.
+        // DPR 2 → 3840×2160 = 8.3MP → visually identical on screen, fast.
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.canvas.width = container.clientWidth * dpr;
         this.canvas.height = container.clientHeight * dpr;
         this.canvas.style.width = container.clientWidth + 'px';
         this.canvas.style.height = container.clientHeight + 'px';
+        
+        // Sync cache canvas size
+        this.cacheCanvas.width = this.canvas.width;
+        this.cacheCanvas.height = this.canvas.height;
+        this.needsCacheRedraw = true;
+
         this.isDirty = true;
     }
 
@@ -41,6 +56,7 @@ export class InfiniteCanvas {
     pan(dx, dy) {
         this.camera.x += dx / this.camera.zoom;
         this.camera.y += dy / this.camera.zoom;
+        this.needsCacheRedraw = true;
         this.isDirty = true;
     }
 
@@ -51,6 +67,7 @@ export class InfiniteCanvas {
         const worldAfter = this.screenToWorld(centerX, centerY);
         this.camera.x += worldAfter.x - worldBefore.x;
         this.camera.y += worldAfter.y - worldBefore.y;
+        this.needsCacheRedraw = true;
         this.isDirty = true;
     }
 
@@ -66,6 +83,7 @@ export class InfiniteCanvas {
     zoomToFit() {
         if (this.strokes.length === 0) {
             this.camera = { x: 0, y: 0, zoom: 1 };
+            this.needsCacheRedraw = true;
             this.isDirty = true;
             return;
         }
@@ -91,6 +109,7 @@ export class InfiniteCanvas {
         this.camera.zoom = zoom;
         this.camera.x = -(minX + maxX) / 2;
         this.camera.y = -(minY + maxY) / 2;
+        this.needsCacheRedraw = true;
         this.isDirty = true;
     }
 
@@ -103,15 +122,75 @@ export class InfiniteCanvas {
         ctx.translate(this.camera.x, this.camera.y);
     }
 
+    /** Redraw the cache canvas with all completed strokes. */
+    redrawCache() {
+        const ctx = this.cacheCtx;
+        const dpr = window.devicePixelRatio || 1;
+        
+        // Clear cache
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, this.cacheCanvas.width, this.cacheCanvas.height);
+        
+        // Apply camera to cache
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(this.cacheCanvas.width / 2, this.cacheCanvas.height / 2);
+        ctx.scale(this.camera.zoom, this.camera.zoom);
+        ctx.translate(this.camera.x, this.camera.y);
+
+        // View frustum culling for cache
+        const tl = this.screenToWorld(0, 0);
+        const br = this.screenToWorld(this.canvas.width / dpr, this.canvas.height / dpr);
+        const visMinX = Math.min(tl.x, br.x);
+        const visMaxX = Math.max(tl.x, br.x);
+        const visMinY = Math.min(tl.y, br.y);
+        const visMaxY = Math.max(tl.y, br.y);
+
+        for (const stroke of this.strokes) {
+            if (this._strokeInView(stroke, visMinX, visMaxX, visMinY, visMaxY)) {
+                this.renderStroke(stroke, ctx);
+            }
+        }
+
+        this.needsCacheRedraw = false;
+    }
+
+    /** Add a single stroke to the cache canvas without redrawing everything. */
+    addStrokeToCache(stroke) {
+        if (this.needsCacheRedraw) {
+            this.redrawCache();
+            return;
+        }
+
+        const ctx = this.cacheCtx;
+        ctx.save();
+        // Apply camera to cache
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(this.cacheCanvas.width / 2, this.cacheCanvas.height / 2);
+        ctx.scale(this.camera.zoom, this.camera.zoom);
+        ctx.translate(this.camera.x, this.camera.y);
+
+        this.renderStroke(stroke, ctx);
+
+        ctx.restore();
+    }
+
     /** Main render loop. */
     render() {
         if (!this.isDirty) return;
         this.isDirty = false;
 
+        if (this.needsCacheRedraw) {
+            this.redrawCache();
+        }
+
         const ctx = this.ctx;
 
-        // Clear and draw background
+        // Reset global state to defaults
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1.0;
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Clear and draw background
         const bgColor = this.background === 'light-gray' ? '#f0f0f0' : '#ffffff';
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -121,7 +200,11 @@ export class InfiniteCanvas {
             this.renderBackgroundPattern();
         }
 
-        // Apply camera
+        // Draw cached strokes (static layer)
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(this.cacheCanvas, 0, 0);
+
+        // Apply camera for dynamic elements
         this.applyCamera();
 
         // Draw symmetry axis lines
@@ -129,15 +212,33 @@ export class InfiniteCanvas {
             this.renderSymmetryAxes();
         }
 
-        // Draw all completed strokes
-        for (const stroke of this.strokes) {
-            this.renderStroke(stroke);
-        }
-
-        // Draw current in-progress stroke
+        // Draw current in-progress stroke (dynamic layer)
         if (this.currentStroke) {
-            this.renderStroke(this.currentStroke);
+            this.renderStroke(this.currentStroke, ctx);
         }
+    }
+
+    /** Compute bounding box from an array of points. */
+    _computeBBox(pts) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        }
+        return { minX, minY, maxX, maxY };
+    }
+
+    /** Check if a stroke's cached bounding box overlaps the visible area (O(1) per stroke). */
+    _strokeInView(stroke, visMinX, visMaxX, visMinY, visMaxY) {
+        const bbox = stroke._bbox;
+        if (!bbox) return true; // No bbox (e.g. in-progress stroke) — render to be safe
+
+        // AABB intersection test
+        return !(bbox.maxX < visMinX || bbox.minX > visMaxX ||
+                 bbox.maxY < visMinY || bbox.minY > visMaxY);
     }
 
     /** Render background grid or dot pattern in world space. */
@@ -179,13 +280,13 @@ export class InfiniteCanvas {
             ctx.stroke();
         } else if (this.background === 'dots') {
             const dotR = 1.5 / zoom;
+            ctx.beginPath();
             for (let x = startX; x <= endX; x += spacing) {
                 for (let y = startY; y <= endY; y += spacing) {
-                    ctx.beginPath();
                     ctx.arc(x, y, dotR, 0, Math.PI * 2);
-                    ctx.fill();
                 }
             }
+            ctx.fill();
         }
     }
 
@@ -220,9 +321,7 @@ export class InfiniteCanvas {
     }
 
     /** Render a single stroke with pressure-variable width/opacity. */
-    renderStroke(stroke) {
-        const ctx = this.ctx;
-
+    renderStroke(stroke, ctx) {
         if (stroke.type === 'image-fill') {
             if (!stroke._img) {
                 stroke._img = new Image();
@@ -251,11 +350,6 @@ export class InfiniteCanvas {
         ctx.lineJoin = 'round';
         ctx.globalCompositeOperation = tool.compositeOp || 'source-over';
 
-        if (tool.useShadow) {
-            ctx.shadowBlur = stroke.size * 0.4;
-            ctx.shadowColor = stroke.color;
-        }
-
         if (pts.length === 1) {
             // Single dot
             const p = pts[0];
@@ -270,28 +364,40 @@ export class InfiniteCanvas {
             return;
         }
 
-        // Interpolate points where distance is too large (prevents gaps on fast strokes)
-        const interpolated = this._interpolatePoints(pts);
+        // Use cached interpolated points (computed once in handleStrokeEnd)
+        // or compute on the fly for the current in-progress stroke
+        const ptsToRender = stroke._cachedInterpolated || pts;
 
-        // Draw as connected segments with variable width.
-        // Each segment shares endpoints with neighbors — round lineCap fills the join.
         ctx.strokeStyle = stroke.color;
 
-        for (let i = 0; i < interpolated.length - 1; i++) {
-            const p0 = interpolated[i];
-            const p1 = interpolated[i + 1];
-            const size0 = this.getStrokeSize(stroke, p0.pressure);
-            const size1 = this.getStrokeSize(stroke, p1.pressure);
-            const opacity0 = this.getStrokeOpacity(stroke, p0.pressure);
-            const opacity1 = this.getStrokeOpacity(stroke, p1.pressure);
+        // Use precomputed size/opacity arrays (set in handleStrokeEnd) or compute on the fly
+        const cachedSize = stroke._cachedSize;
+        const cachedOpacity = stroke._cachedOpacity;
 
-            ctx.globalAlpha = (opacity0 + opacity1) / 2;
-            ctx.lineWidth = (size0 + size1) / 2;
+        const useCache = cachedSize && cachedOpacity;
 
-            ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            ctx.lineTo(p1.x, p1.y);
-            ctx.stroke();
+        if (useCache) {
+            for (let i = 1; i < ptsToRender.length; i++) {
+                const prev = ptsToRender[i - 1];
+                const curr = ptsToRender[i];
+                ctx.lineWidth = cachedSize[i];
+                ctx.globalAlpha = cachedOpacity[i];
+                ctx.beginPath();
+                ctx.moveTo(prev.x, prev.y);
+                ctx.lineTo(curr.x, curr.y);
+                ctx.stroke();
+            }
+        } else {
+            for (let i = 1; i < ptsToRender.length; i++) {
+                const prev = ptsToRender[i - 1];
+                const curr = ptsToRender[i];
+                ctx.lineWidth = this.getStrokeSize(stroke, curr.pressure);
+                ctx.globalAlpha = this.getStrokeOpacity(stroke, curr.pressure);
+                ctx.beginPath();
+                ctx.moveTo(prev.x, prev.y);
+                ctx.lineTo(curr.x, curr.y);
+                ctx.stroke();
+            }
         }
 
         ctx.restore();
@@ -348,18 +454,27 @@ export class InfiniteCanvas {
         return (range[0] + (range[1] - range[0]) * p) * stroke.opacity;
     }
 
-    /** Start the rendering loop. */
+    /** Start the rendering loop. Uses requestAnimationFrame batching so multiple
+     *  markDirty() calls within one frame produce only a single render. */
     startRenderLoop() {
-        const loop = () => {
+        this._rafPending = false;
+        this._scheduleRender();
+    }
+
+    /** Schedule a render on the next animation frame (debounced). */
+    _scheduleRender() {
+        if (this._rafPending) return;
+        this._rafPending = true;
+        requestAnimationFrame(() => {
+            this._rafPending = false;
             this.render();
-            requestAnimationFrame(loop);
-        };
-        requestAnimationFrame(loop);
+        });
     }
 
     /** Mark canvas as needing a redraw. */
     markDirty() {
         this.isDirty = true;
+        this._scheduleRender();
     }
 
     /** Get pixel color at a screen position (for eyedropper). */
@@ -408,13 +523,9 @@ export class InfiniteCanvas {
             // Translate so content starts at padding
             offCtx.translate(-minX + padding, -minY + padding);
 
-            // Temporarily swap ctx
-            const origCtx = this.ctx;
-            this.ctx = offCtx;
             for (const stroke of this.strokes) {
-                this.renderStroke(stroke);
+                this.renderStroke(stroke, offCtx);
             }
-            this.ctx = origCtx;
 
             offCanvas.toBlob((blob) => resolve(blob), 'image/png');
         });
@@ -449,12 +560,9 @@ export class InfiniteCanvas {
         offCtx.translate(-minX * scale + 10, -minY * scale + 10);
         offCtx.scale(scale, scale);
 
-        const origCtx = this.ctx;
-        this.ctx = offCtx;
         for (const stroke of this.strokes) {
-            this.renderStroke(stroke);
+            this.renderStroke(stroke, offCtx);
         }
-        this.ctx = origCtx;
 
         return offCanvas.toDataURL('image/png', 0.7);
     }

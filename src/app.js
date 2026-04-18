@@ -89,16 +89,37 @@ function handleStrokeEnd() {
     const stroke = infiniteCanvas.currentStroke;
     if (!stroke) return;
 
+    // Precompute & cache interpolated points so renderStroke doesn't recompute them every frame
+    const interpolated = infiniteCanvas._interpolatePoints(stroke.points);
+    stroke._cachedInterpolated = interpolated;
+
+    // Precompute size/opacity for each point so renderStroke doesn't call getStrokeSize/Opacity per point
+    const tool = stroke.toolDef;
+    if (tool) {
+        stroke._cachedSize = interpolated.map(pt => infiniteCanvas.getStrokeSize(stroke, pt.pressure));
+        stroke._cachedOpacity = interpolated.map(pt => infiniteCanvas.getStrokeOpacity(stroke, pt.pressure));
+    }
+
+    // Cache bounding box for view frustum culling (computed once, used every frame)
+    stroke._bbox = infiniteCanvas._computeBBox(interpolated);
+
     infiniteCanvas.currentStroke = null;
 
     // Add main stroke
     infiniteCanvas.strokes.push(stroke);
+    infiniteCanvas.addStrokeToCache(stroke);
     const strokesAdded = [stroke];
 
-    // Add mirror strokes
+    // Add mirror strokes and cache their interpolated points too
     if (stroke._mirrorStrokes) {
         for (const ms of stroke._mirrorStrokes) {
+            const mi = infiniteCanvas._interpolatePoints(ms.points);
+            ms._cachedInterpolated = mi;
+            ms._cachedSize = mi.map(pt => infiniteCanvas.getStrokeSize(ms, pt.pressure));
+            ms._cachedOpacity = mi.map(pt => infiniteCanvas.getStrokeOpacity(ms, pt.pressure));
+            ms._bbox = infiniteCanvas._computeBBox(mi);
             infiniteCanvas.strokes.push(ms);
+            infiniteCanvas.addStrokeToCache(ms);
             strokesAdded.push(ms);
         }
         delete stroke._mirrorStrokes;
@@ -226,7 +247,8 @@ canvasEl.addEventListener('pointerdown', (e) => {
                 worldX: tl.x,
                 worldY: tl.y,
                 worldW: br.x - tl.x,
-                worldH: br.y - tl.y
+                worldH: br.y - tl.y,
+                _bbox: { minX: tl.x, minY: tl.y, maxX: br.x, maxY: br.y },
             };
             
             infiniteCanvas.strokes.push(fillStroke);
@@ -441,6 +463,7 @@ function doUndo() {
         // Restore the strokes
         infiniteCanvas.strokes = action.data.slice();
     }
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
     state.isDirtyForSave = true;
 }
@@ -455,6 +478,7 @@ function doRedo() {
     } else if (action.type === 'clear') {
         infiniteCanvas.strokes = [];
     }
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
     state.isDirtyForSave = true;
 }
@@ -717,7 +741,9 @@ function initColorPicker() {
 }
 
 // ===== Save / Load =====
-async function saveDrawing() {
+async function saveDrawing(options = {}) {
+    const { download = true } = options;
+
     const drawing = {
         id: state.drawingId || 'drawing_' + Date.now(),
         name: state.drawingName,
@@ -748,7 +774,9 @@ async function saveDrawing() {
 
     await storage.saveDrawing(drawing);
     state.isDirtyForSave = false;
-    
+
+    if (!download) return;
+
     // Download the raw JSON file (.kidraw)
     const jsonStr = JSON.stringify(drawing);
     const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -760,7 +788,7 @@ async function saveDrawing() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
+
     showToast('Project Saved (.kidraw)!');
 }
 
@@ -775,13 +803,22 @@ async function loadDrawing(id) {
     infiniteCanvas.background = drawing.background || 'white';
     infiniteCanvas.camera = drawing.camera || { x: 0, y: 0, zoom: 1 };
 
-    // Reconstruct strokes with tool definitions
-    infiniteCanvas.strokes = (drawing.strokes || []).map(s => ({
-        ...s,
-        toolDef: getTool(s.tool),
-    }));
+    // Reconstruct strokes with tool definitions and precomputed caches
+    infiniteCanvas.strokes = (drawing.strokes || []).map(s => {
+        const stroke = { ...s, toolDef: getTool(s.tool) };
+        // Skip for fill strokes
+        if (s.type === 'image-fill') return stroke;
+        // Rebuild cached interpolated points and bbox for culling
+        const interpolated = infiniteCanvas._interpolatePoints(stroke.points);
+        stroke._cachedInterpolated = interpolated;
+        stroke._cachedSize = interpolated.map(pt => infiniteCanvas.getStrokeSize(stroke, pt.pressure));
+        stroke._cachedOpacity = interpolated.map(pt => infiniteCanvas.getStrokeOpacity(stroke, pt.pressure));
+        stroke._bbox = infiniteCanvas._computeBBox(interpolated);
+        return stroke;
+    });
 
     history.clear();
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
     updateZoomDisplay();
     updateBackgroundUI();
@@ -796,26 +833,26 @@ function newDrawing() {
     infiniteCanvas.camera = { x: 0, y: 0, zoom: 1 };
     infiniteCanvas.background = 'white';
     history.clear();
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
     updateZoomDisplay();
     updateBackgroundUI();
     state.isDirtyForSave = false;
 }
 
-// Auto-save every 30 seconds
+// Auto-save every 30 seconds (silent, no download popup)
 function startAutoSave() {
     setInterval(async () => {
         if (state.isDirtyForSave && infiniteCanvas.strokes.length > 0) {
-            await saveDrawing();
+            await saveDrawing({ download: false });
         }
     }, 30000);
 }
 
-// Save before page unload
+// Save before page unload (silent, no download)
 window.addEventListener('beforeunload', () => {
     if (state.isDirtyForSave && infiniteCanvas.strokes.length > 0) {
-        // Synchronous save attempt
-        saveDrawing();
+        saveDrawing({ download: false });
     }
 });
 
@@ -940,6 +977,7 @@ function clearCanvas() {
     document.getElementById('modal-confirm').addEventListener('click', () => {
         const oldStrokes = infiniteCanvas.strokes.slice();
         infiniteCanvas.strokes = [];
+        infiniteCanvas.needsCacheRedraw = true;
         history.push({ type: 'clear', data: oldStrokes });
         infiniteCanvas.markDirty();
         state.isDirtyForSave = true;
@@ -958,6 +996,7 @@ let bgIndex = 0;
 function cycleBackground() {
     bgIndex = (bgIndex + 1) % BACKGROUNDS.length;
     infiniteCanvas.background = BACKGROUNDS[bgIndex];
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
     state.isDirtyForSave = true;
     updateBackgroundUI();
@@ -974,12 +1013,14 @@ function updateBackgroundUI() {
 function toggleSymmetryH() {
     infiniteCanvas.symmetry.horizontal = !infiniteCanvas.symmetry.horizontal;
     document.getElementById('btn-symmetry-h').classList.toggle('active', infiniteCanvas.symmetry.horizontal);
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
 }
 
 function toggleSymmetryV() {
     infiniteCanvas.symmetry.vertical = !infiniteCanvas.symmetry.vertical;
     document.getElementById('btn-symmetry-v').classList.toggle('active', infiniteCanvas.symmetry.vertical);
+    infiniteCanvas.needsCacheRedraw = true;
     infiniteCanvas.markDirty();
 }
 
@@ -1068,10 +1109,16 @@ function wireTopBar() {
             infiniteCanvas.background = drawing.background || 'white';
             infiniteCanvas.camera = drawing.camera || { x: 0, y: 0, zoom: 1 };
 
-            infiniteCanvas.strokes = (drawing.strokes || []).map(s => ({
-                ...s,
-                toolDef: getTool(s.tool),
-            }));
+            infiniteCanvas.strokes = (drawing.strokes || []).map(s => {
+                const stroke = { ...s, toolDef: getTool(s.tool) };
+                if (s.type === 'image-fill') return stroke;
+                const interpolated = infiniteCanvas._interpolatePoints(stroke.points);
+                stroke._cachedInterpolated = interpolated;
+                stroke._cachedSize = interpolated.map(pt => infiniteCanvas.getStrokeSize(stroke, pt.pressure));
+                stroke._cachedOpacity = interpolated.map(pt => infiniteCanvas.getStrokeOpacity(stroke, pt.pressure));
+                stroke._bbox = infiniteCanvas._computeBBox(interpolated);
+                return stroke;
+            });
 
             history.clear();
             infiniteCanvas.markDirty();

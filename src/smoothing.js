@@ -22,6 +22,10 @@ export class StrokeStabilizer {
             this.buffer.shift();
         }
 
+        if (this.buffer.length === 1) {
+            return this.buffer[0];
+        }
+
         let totalWeight = 0;
         let sx = 0, sy = 0, sp = 0;
 
