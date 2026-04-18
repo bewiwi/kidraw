@@ -252,6 +252,7 @@ canvasEl.addEventListener('pointerdown', (e) => {
             };
             
             infiniteCanvas.strokes.push(fillStroke);
+            infiniteCanvas.addStrokeToCache(fillStroke);
             history.push({ type: 'strokes', data: [fillStroke] });
             infiniteCanvas.markDirty();
             state.isDirtyForSave = true;
