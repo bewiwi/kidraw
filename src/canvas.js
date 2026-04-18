@@ -326,7 +326,10 @@ export class InfiniteCanvas {
             if (!stroke._img) {
                 stroke._img = new Image();
                 stroke._img.src = stroke.patchData;
-                stroke._img.onload = () => this.markDirty();
+                stroke._img.onload = () => {
+                    this.needsCacheRedraw = true;
+                    this.markDirty();
+                };
                 return;
             }
             if (stroke._img.complete) {
