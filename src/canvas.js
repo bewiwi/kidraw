@@ -13,7 +13,7 @@ export class InfiniteCanvas {
         this.needsCacheRedraw = true;
 
         this.camera = { x: 0, y: 0, zoom: 1 };
-        this.isDirty = true;
+        this.markDirty();
         this.strokes = [];
         this.currentStroke = null;
         this.background = 'white';
@@ -40,7 +40,7 @@ export class InfiniteCanvas {
         this.cacheCanvas.height = this.canvas.height;
         this.needsCacheRedraw = true;
 
-        this.isDirty = true;
+        this.markDirty();
     }
 
     /** Convert screen coordinates to world coordinates. */
@@ -57,7 +57,7 @@ export class InfiniteCanvas {
         this.camera.x += dx / this.camera.zoom;
         this.camera.y += dy / this.camera.zoom;
         this.needsCacheRedraw = true;
-        this.isDirty = true;
+        this.markDirty();
     }
 
     /** Zoom centered on a screen-space point. */
@@ -68,7 +68,7 @@ export class InfiniteCanvas {
         this.camera.x += worldAfter.x - worldBefore.x;
         this.camera.y += worldAfter.y - worldBefore.y;
         this.needsCacheRedraw = true;
-        this.isDirty = true;
+        this.markDirty();
     }
 
     /** Set zoom to a specific value, centered on screen center. */
@@ -84,7 +84,7 @@ export class InfiniteCanvas {
         if (this.strokes.length === 0) {
             this.camera = { x: 0, y: 0, zoom: 1 };
             this.needsCacheRedraw = true;
-            this.isDirty = true;
+            this.markDirty();
             return;
         }
 
@@ -110,7 +110,7 @@ export class InfiniteCanvas {
         this.camera.x = -(minX + maxX) / 2;
         this.camera.y = -(minY + maxY) / 2;
         this.needsCacheRedraw = true;
-        this.isDirty = true;
+        this.markDirty();
     }
 
     /** Apply camera transform to the canvas context. */
